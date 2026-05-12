@@ -249,26 +249,65 @@ ${prompt}
     });
   }
 });
-app.get("/app/dashboard", auth, async (req: any, res: Response) => {
+app.post("/api/board", async (req, res) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) {
+    return res.status(401).json({ message: "No token" });
+  }
+
+  const token = authHeader.split(" ")[1];
+
   try {
-    const user_id = req.user.id;
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
+      id: string;
+    };
+
+    const userId = decoded.id;
+    if (userId) {
+      const [board] = await pool.query(
+        "SELECT title,description,color FROM boards WHERE user_id = ?",
+        [userId],
+      );
+      res.json({ board });
+    }
+  } catch (err) {
+    return res.status(401).json({ message: "Invalid token" });
+  }
+});
+app.get("/app/dashboard", auth, async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({
+        success: false,
+        message: "Authorization header missing",
+      });
+    }
+    const token = authHeader.split(" ")[1];
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET as string,
+    ) as jwt.JwtPayload;
+
+    // Get user id directly from token
+    const userId = decoded.id;
 
     const [boards]: any = await pool.query(
       "SELECT * FROM boards WHERE user_id = ?",
-      [user_id],
+      [userId],
     );
 
-    return res.json({
+    res.json({
       success: true,
       boards,
     });
-  } catch (error: any) {
-    console.error("GET DASHBOARD ERROR:", error);
+  } catch (err) {
+    console.error(err);
 
     res.status(500).json({
       success: false,
-      message: "Internal server error",
-      error: error.message,
+      message: "Server error",
     });
   }
 });
