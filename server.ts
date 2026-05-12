@@ -350,6 +350,113 @@ app.post("/app/dashboard", auth, async (req: any, res: Response) => {
     });
   }
 });
+////////////////////////////////////////////////////////////////////
+///param page
+///////////////////////////////////////////////////////////////////
+app.get("/app/board/:id", async (req: Request, res: Response) => {
+  try {
+    // Board id from URL params
+    const boardId = req.params.id;
+
+    // Token from header
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader) {
+      return res.status(401).json({
+        success: false,
+        message: "No token provided",
+      });
+    }
+
+    const token = authHeader.split(" ")[1];
+
+    // Decode JWT
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET as string,
+    ) as jwt.JwtPayload;
+
+    // User id from token
+    const userId = decoded.id;
+
+    // Get ONLY this user's board
+    const [rows]: any = await pool.query(
+      "SELECT * FROM boards WHERE id = ? AND user_id = ? LIMIT 1",
+      [boardId, userId],
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: "Board not found",
+      });
+    }
+
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+
+    res.status(401).json({
+      success: false,
+      message: "Invalid token",
+    });
+  }
+});
+////////////////////
+//delete board
+////////////////////
+app.delete("/app/board/:id", async (req: Request, res: Response) => {
+  try {
+    // 1. Board ID from URL
+    const boardId = req.params.id;
+
+    // 2. Get token from header
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader) {
+      return res.status(401).json({
+        success: false,
+        message: "No token provided",
+      });
+    }
+
+    const token = authHeader.split(" ")[1];
+
+    // 3. Verify token
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET as string,
+    ) as jwt.JwtPayload;
+
+    const userId = decoded.id;
+
+    // 4. Delete ONLY if it belongs to user
+    const [result]: any = await pool.query(
+      "DELETE FROM boards WHERE id = ? AND user_id = ?",
+      [boardId, userId],
+    );
+
+    // 5. Check if anything was deleted
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Board not found or not yours",
+      });
+    }
+
+    // 6. Success response
+    return res.json({
+      success: true,
+    });
+  } catch (err) {
+    console.error(err);
+
+    return res.status(401).json({
+      success: false,
+      message: "Invalid token",
+    });
+  }
+});
 ///////////////////////////
 //delete
 ///////////////////////////
