@@ -90,6 +90,11 @@ app.post("/auth/register", async (req: Request, res: Response) => {
     });
   }
 }); // register a new user
+app.get("/auth/login", auth, async (req: Request, res: Response) => {
+  res.status(200).json({
+    success: true,
+  });
+}); //check verity token
 app.post("/auth/login", async (req: Request, res: Response) => {
   try {
     const { username, password, googleuser, githubuser } = req.body;
@@ -384,7 +389,10 @@ app.get("/app/board/:id", async (req: Request, res: Response) => {
       "SELECT * FROM boards WHERE id = ? AND user_id = ? LIMIT 1",
       [boardId, userId],
     );
-
+    const [tasks]: any = await pool.query(
+      "SELECT side_mission, complete FROM board_data WHERE board_id = ?",
+      [boardId],
+    );
     if (!rows.length) {
       return res.status(404).json({
         success: false,
@@ -392,7 +400,10 @@ app.get("/app/board/:id", async (req: Request, res: Response) => {
       });
     }
 
-    res.json(rows[0]);
+    res.json({
+      board: rows[0],
+      tasks: tasks,
+    });
   } catch (err) {
     console.error(err);
 
@@ -447,6 +458,121 @@ app.delete("/app/board/:id", async (req: Request, res: Response) => {
     // 6. Success response
     return res.json({
       success: true,
+    });
+  } catch (err) {
+    console.error(err);
+
+    return res.status(401).json({
+      success: false,
+      message: "Invalid token",
+    });
+  }
+});
+//////////////////////////
+//update active
+//////////////////////////
+app.put("/app/board/:id", async (req: Request, res: Response) => {
+  try {
+    const boardId = req.params.id;
+
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader) {
+      return res.status(401).json({
+        success: false,
+        message: "No token provided",
+      });
+    }
+
+    const token = authHeader.split(" ")[1];
+
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET as string,
+    ) as jwt.JwtPayload;
+
+    const userId = decoded.id;
+
+    // 1. Get current active state
+    const [rows]: any = await pool.query(
+      "SELECT active FROM boards WHERE id = ? AND user_id = ?",
+      [boardId, userId],
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: "Board not found",
+      });
+    }
+
+    const currentActive = rows[0].active;
+
+    // 2. Toggle it (1 -> 0, 0 -> 1)
+    const newActive = currentActive === 1 ? 0 : 1;
+
+    // 3. Update DB
+    await pool.query(
+      "UPDATE boards SET active = ? WHERE id = ? AND user_id = ?",
+      [newActive, boardId, userId],
+    );
+
+    return res.json({
+      success: true,
+      active: newActive,
+    });
+  } catch (err) {
+    console.error(err);
+
+    return res.status(401).json({
+      success: false,
+      message: "Invalid token",
+    });
+  }
+});
+///////////////////////////
+//params insert
+///////////////////////////
+app.post("/app/board/:id", async (req: Request, res: Response) => {
+  try {
+    const boardId = req.params.id;
+
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader) {
+      return res.status(401).json({
+        success: false,
+        message: "No token provided",
+      });
+    }
+
+    const token = authHeader.split(" ")[1];
+
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET as string,
+    ) as jwt.JwtPayload;
+
+    const userId = decoded.id;
+
+    const { task } = req.body;
+
+    if (!task) {
+      return res.status(400).json({
+        success: false,
+        message: "Task is required",
+      });
+    }
+
+    // Insert task
+    await pool.query(
+      "INSERT INTO board_data (side_mission, complete, board_id) VALUES (?, ?, ?)",
+      [task, 0, boardId],
+    );
+
+    return res.json({
+      success: true,
+      message: "Task added successfully",
     });
   } catch (err) {
     console.error(err);
