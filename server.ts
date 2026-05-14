@@ -530,6 +530,59 @@ app.put("/app/board/:id", async (req: Request, res: Response) => {
     });
   }
 });
+//param change page
+app.put(
+  "/app/board/:boardId/changeExistData",
+  auth,
+  async (req: Request, res: Response) => {
+    try {
+      const { boardId } = req.params;
+      const { title, description } = req.body;
+
+      // update only title
+      if (title && !description) {
+        await pool.query("UPDATE boards SET title = ? WHERE id = ?", [
+          title,
+          boardId,
+        ]);
+      }
+
+      // update only description
+      if (description && !title) {
+        await pool.query("UPDATE boards SET description = ? WHERE id = ?", [
+          description,
+          boardId,
+        ]);
+      }
+
+      // update both
+      if (title && description) {
+        await pool.query(
+          "UPDATE boards SET title = ?, description = ? WHERE id = ?",
+          [title, description, boardId],
+        );
+      }
+
+      const [rows]: any = await pool.query(
+        "SELECT title, description FROM boards WHERE id = ? LIMIT 1",
+        [boardId],
+      );
+
+      const board = rows[0];
+
+      res.status(200).json({
+        success: true,
+        title: board.title,
+        description: board.description,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Server error",
+      });
+    }
+  },
+);
 ///////////////////////////
 //params insert
 ///////////////////////////
