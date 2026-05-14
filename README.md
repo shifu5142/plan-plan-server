@@ -1,1 +1,1 @@
-this is the server backend of the PlabPlan project 
+this is the server backend of the PlanPlan project 
