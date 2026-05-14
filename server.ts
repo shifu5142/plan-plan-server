@@ -583,6 +583,30 @@ app.put(
     }
   },
 );
+//////////////////////////
+//delete board
+//////////////////////////
+app.delete(
+  "/app/board/:boardId/changeExistData",
+  auth,
+  async (req: Request, res: Response) => {
+    try {
+      const { boardId } = req.params;
+
+      await pool.query("DELETE FROM boards WHERE id = ?", [boardId]);
+
+      res.status(200).json({
+        success: true,
+        message: "Board deleted successfully",
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: "Server error",
+      });
+    }
+  },
+);
 ///////////////////////////
 //params insert
 ///////////////////////////
