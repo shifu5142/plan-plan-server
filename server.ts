@@ -7,12 +7,41 @@ import cors from "cors";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
+interface AuthTokenPayload extends jwt.JwtPayload {
+  id: number;
+  email: string;
+}
+
 declare global {
   namespace Express {
     interface Request {
-      user?: string | jwt.JwtPayload;
+      user?: AuthTokenPayload;
     }
   }
+}
+
+function getAuthUserId(req: Request): number | null {
+  const id = req.user?.id;
+  if (id === undefined || id === null) return null;
+  const numericId = Number(id);
+  return Number.isFinite(numericId) ? numericId : null;
+}
+
+async function ensureUserProfile(
+  userId: number,
+  displayName: string,
+  email: string,
+) {
+  const [rows] = await pool.query(
+    "SELECT id FROM user_profiles WHERE user_id = ? LIMIT 1",
+    [userId],
+  );
+  if (Array.isArray(rows) && rows.length > 0) return;
+
+  await pool.query(
+    "INSERT INTO user_profiles (user_id, display_name, email) VALUES (?, ?, ?)",
+    [userId, displayName, email],
+  );
 }
 
 ////////////////////////////////////////////////
@@ -51,8 +80,8 @@ function auth(req: Request, res: Response, next: NextFunction) {
   const token = header.split(" ")[1];
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET as string);
-    req.user = decoded; // now you have user info
+    const decoded = jwt.verify(token, JWT_SECRET as string) as AuthTokenPayload;
+    req.user = decoded;
     next();
   } catch {
     res.status(401).json({ message: "Invalid token" });
@@ -72,10 +101,11 @@ app.post("/auth/register", async (req: Request, res: Response) => {
       });
     }
     const hashedPassword = await bcrypt.hash(password, 10);
-    const [result] = await pool.query(
+    const [result]: any = await pool.query(
       "INSERT INTO users (name, email, password) VALUES (?, ?, ?)",
       [username, email, hashedPassword],
     );
+    await ensureUserProfile(result.insertId, username, email);
     res.status(201).json({
       message: "User created successfully",
       success: true,
@@ -122,8 +152,10 @@ app.post("/auth/login", async (req: Request, res: Response) => {
           name: googleuser.username,
           email: googleuser.email,
         };
+        await ensureUserProfile(user.id, user.name, user.email);
       } else {
         user = rows[0];
+        await ensureUserProfile(user.id, user.name, user.email);
       }
     }
     if (githubuser?.email) {
@@ -144,8 +176,10 @@ app.post("/auth/login", async (req: Request, res: Response) => {
           name: githubuser.username,
           email: githubuser.email,
         };
+        await ensureUserProfile(user.id, user.name, user.email);
       } else {
         user = rows[0];
+        await ensureUserProfile(user.id, user.name, user.email);
       }
     }
 
@@ -187,6 +221,8 @@ app.post("/auth/login", async (req: Request, res: Response) => {
     // =========================
     // TOKEN (same for both flows)
     // =========================
+    await ensureUserProfile(user.id, user.name, user.email);
+
     const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, {
       expiresIn: "2h",
     });
@@ -698,6 +734,190 @@ app.post("/app/delete", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+////////////////////////////////////////////
+//setting
+////////////////////////////////////////////
+////////////////////////////////////////////
+//setting/profile
+////////////////////////////////////////////
+app.get("/app/settings/profile", auth, async (req, res) => {
+  try {
+    const userId = getAuthUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Invalid token" });
+    }
+
+    const [userRows] = await pool.query(
+      "SELECT id, name, email, created_at FROM users WHERE id = ?",
+      [userId],
+    );
+    const users = userRows as any[];
+
+    if (users.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const user = users[0];
+    await ensureUserProfile(userId, user.name, user.email);
+
+    const [profileRows] = await pool.query(
+      `SELECT id, user_id, display_name, email, bio, role, department, created_at, updated_at
+       FROM user_profiles WHERE user_id = ? LIMIT 1`,
+      [userId],
+    );
+    const profile = (profileRows as any[])[0];
+
+    return res.json({
+      id: user.id,
+      name: profile?.display_name ?? user.name,
+      email: profile?.email ?? user.email,
+      bio: profile?.bio ?? null,
+      role: profile?.role ?? null,
+      department: profile?.department ?? null,
+      createdAt: user.created_at,
+      updatedAt: profile?.updated_at ?? null,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+//setting/account
+////////////////////////////////////////////
+app.get("/app/settings/account", auth, async (req, res) => {
+  try {
+    const userId = (req as any).user.id;
+
+    const [rows] = await pool.query(
+      "SELECT id, name, email, created_at FROM users WHERE id = ?",
+      [userId],
+    );
+
+    const users = rows as any[];
+
+    if (users.length === 0) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.json(users[0]);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+//////////////////////////////////////////////////////////////
+//setting/profile
+/////////////////////////////////////////////////////////////
+app.put("/app/settings/profile", auth, async (req: Request, res: Response) => {
+  try {
+    const userId = getAuthUserId(req);
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token",
+      });
+    }
+
+    const { name, email, bio, role, department } = req.body;
+
+    const [userRows] = await pool.query(
+      "SELECT id FROM users WHERE id = ? LIMIT 1",
+      [userId],
+    );
+    if (!(userRows as any[]).length) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    await pool.query("UPDATE users SET name = ?, email = ? WHERE id = ?", [
+      name?.trim(),
+      email?.trim(),
+      userId,
+    ]);
+
+    const [updateResult]: any = await pool.query(
+      `
+      UPDATE user_profiles
+      SET
+        display_name = ?,
+        email = ?,
+        bio = ?,
+        role = ?,
+        department = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ?
+      `,
+      [
+        name?.trim(),
+        email?.trim(),
+        bio || null,
+        role || null,
+        department || null,
+        userId,
+      ],
+    );
+
+    if (updateResult.affectedRows === 0) {
+      await pool.query(
+        `
+        INSERT INTO user_profiles (user_id, display_name, email, bio, role, department)
+        VALUES (?, ?, ?, ?, ?, ?)
+        `,
+        [
+          userId,
+          name?.trim(),
+          email?.trim(),
+          bio || null,
+          role || null,
+          department || null,
+        ],
+      );
+    }
+
+    const [rows]: any = await pool.query(
+      `
+      SELECT
+        id,
+        user_id,
+        display_name,
+        email,
+        bio,
+        role,
+        department,
+        created_at,
+        updated_at
+      FROM user_profiles
+      WHERE user_id = ?
+      LIMIT 1
+      `,
+      [userId],
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      data: {
+        id: rows[0].id,
+        userId: rows[0].user_id,
+        name: rows[0].display_name,
+        email: rows[0].email,
+        bio: rows[0].bio,
+        role: rows[0].role,
+        department: rows[0].department,
+        createdAt: rows[0].created_at,
+        updatedAt: rows[0].updated_at,
+      },
+    });
+  } catch (err) {
+    console.error("[PUT PROFILE ERROR]", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
   }
 });
 ////////////////////////////////////////////////////////////////////////////////////////////////
