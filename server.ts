@@ -742,46 +742,79 @@ app.post("/app/delete", async (req, res) => {
 ////////////////////////////////////////////
 //setting/profile
 ////////////////////////////////////////////
-app.get("/app/settings/profile", auth, async (req, res) => {
+app.get("/app/settings/profile", auth, async (req: Request, res: Response) => {
   try {
-    const userId = getAuthUserId(req);
-    if (!userId) {
-      return res.status(401).json({ message: "Invalid token" });
-    }
+    const userId = (req as any).user.id;
 
-    const [userRows] = await pool.query(
-      "SELECT id, name, email, created_at FROM users WHERE id = ?",
+    // =========================
+    // 1. TRY user_profiles FIRST
+    // =========================
+    const [profileRows]: any = await pool.query(
+      `
+      SELECT
+        display_name,
+        email,
+        bio,
+        role,
+        department
+      FROM user_profiles
+      WHERE user_id = ?
+      `,
       [userId],
     );
-    const users = userRows as any[];
 
-    if (users.length === 0) {
-      return res.status(404).json({ message: "User not found" });
+    if (profileRows.length > 0) {
+      const p = profileRows[0];
+
+      return res.json({
+        success: true,
+        data: {
+          name: p.display_name,
+          email: p.email,
+          bio: p.bio,
+          role: p.role,
+          department: p.department,
+        },
+      });
     }
 
-    const user = users[0];
-    await ensureUserProfile(userId, user.name, user.email);
-
-    const [profileRows] = await pool.query(
-      `SELECT id, user_id, display_name, email, bio, role, department, created_at, updated_at
-       FROM user_profiles WHERE user_id = ? LIMIT 1`,
+    // =========================
+    // 2. FALLBACK TO users TABLE (ONLY name + email)
+    // =========================
+    const [userRows]: any = await pool.query(
+      `
+      SELECT name, email
+      FROM users
+      WHERE id = ?
+      LIMIT 1
+      `,
       [userId],
     );
-    const profile = (profileRows as any[])[0];
+
+    if (!userRows.length) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const u = userRows[0];
 
     return res.json({
-      id: user.id,
-      name: profile?.display_name ?? user.name,
-      email: profile?.email ?? user.email,
-      bio: profile?.bio ?? null,
-      role: profile?.role ?? null,
-      department: profile?.department ?? null,
-      createdAt: user.created_at,
-      updatedAt: profile?.updated_at ?? null,
+      success: true,
+      data: {
+        name: u.name,
+        email: u.email,
+      },
     });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ message: "Server error" });
+  } catch (error) {
+    console.error("[GET PROFILE ERROR]", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error,
+    });
   }
 });
 //setting/account
@@ -919,6 +952,89 @@ app.put("/app/settings/profile", auth, async (req: Request, res: Response) => {
       message: "Server error",
     });
   }
+});
+// Settings Main Page
+app.get("/settings", auth, async (req: Request, res: Response) => {
+  return res.status(200).json({
+    success: true,
+    message: "Valid token",
+  });
+});
+
+// Appearance Page
+app.get("/settings/appearance", auth, async (req: Request, res: Response) => {
+  return res.status(200).json({
+    success: true,
+    message: "Valid token",
+  });
+});
+
+// Billing Page
+app.get("/settings/billing", auth, async (req: Request, res: Response) => {
+  return res.status(200).json({
+    success: true,
+    message: "Valid token",
+  });
+});
+
+// Integrations Page
+app.get("/settings/integrations", auth, async (req: Request, res: Response) => {
+  return res.status(200).json({
+    success: true,
+    message: "Valid token",
+  });
+});
+
+// Notifications Page
+app.get(
+  "/settings/notifications",
+  auth,
+  async (req: Request, res: Response) => {
+    return res.status(200).json({
+      success: true,
+      message: "Valid token",
+    });
+  },
+);
+
+// Preferences Page
+app.get("/settings/preferences", auth, async (req: Request, res: Response) => {
+  return res.status(200).json({
+    success: true,
+    message: "Valid token",
+  });
+});
+
+// Privacy Page
+app.get("/settings/privacy", auth, async (req: Request, res: Response) => {
+  return res.status(200).json({
+    success: true,
+    message: "Valid token",
+  });
+});
+
+// Team Page
+app.get("/settings/team", auth, async (req: Request, res: Response) => {
+  return res.status(200).json({
+    success: true,
+    message: "Valid token",
+  });
+});
+
+// Security Page
+app.get("/settings/security", auth, async (req: Request, res: Response) => {
+  return res.status(200).json({
+    success: true,
+    message: "Valid token",
+  });
+});
+
+// Advanced Page
+app.get("/settings/advanced", auth, async (req: Request, res: Response) => {
+  return res.status(200).json({
+    success: true,
+    message: "Valid token",
+  });
 });
 ////////////////////////////////////////////////////////////////////////////////////////////////
 app.listen(PORT, async () => {
